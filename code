@@ -1,0 +1,121 @@
+/***********************************************************************
+ * RampControl V1.0
+ * -------------------------------------------------------------
+ * Autor: Rodrigo Vicente + ChatGPT
+ * Plataforma: Arduino UNO R3
+ *
+ * Sistema de control para rampa de estacionamiento de un solo carril.
+ *
+ * Entradas:
+ *  E1 -> Sensor entrada (calle)
+ *  E2 -> Sensor centro (rampa)
+ *  E3 -> Sensor salida (sótano)
+ *
+ * Salidas:
+ *  ROJO_ENTRADA
+ *  ROJO_SALIDA
+ *  VERDE_ENTRADA
+ *  VERDE_SALIDA
+ *
+ * Programación sin delay()
+ * Máquina de estados
+ **********************************************************************/
+
+//==================== PINES ====================
+
+const byte SENSOR_ENTRADA = 2;   // E1
+const byte SENSOR_CENTRO  = 3;   // E2
+const byte SENSOR_SALIDA  = 4;   // E3
+
+const byte ROJO_ENTRADA  = 8;
+const byte ROJO_SALIDA   = 9;
+const byte VERDE_ENTRADA = 10;
+const byte VERDE_SALIDA  = 11;
+
+//==================== TIEMPOS ==================
+
+const unsigned long TIEMPO_E1_E2 = 15000UL;
+const unsigned long TIEMPO_E2_E3 = 30000UL;
+const unsigned long TIEMPO_VERDE = 3000UL;
+const unsigned long TIEMPO_INACTIVIDAD = 300000UL;
+
+//==================== ESTADOS ==================
+
+enum EstadoSistema
+{
+    REPOSO,
+
+    ENTRADA_ESPERA_E2,
+    ENTRADA_ESPERA_E3,
+
+    SALIDA_ESPERA_E2,
+    SALIDA_ESPERA_E1,
+
+    VERDE_ENTRADA_ON,
+    VERDE_SALIDA_ON,
+
+    ALARMA
+};
+
+EstadoSistema estadoActual = REPOSO;
+
+//==================== VARIABLES =================
+
+unsigned long tiempoEstado = 0;
+unsigned long ultimoMovimiento = 0;
+
+//==================== FUNCIONES =================
+
+bool sensorActivo(byte pin)
+{
+    return digitalRead(pin) == LOW;
+}
+
+void cambiarEstado(EstadoSistema nuevoEstado)
+{
+    estadoActual = nuevoEstado;
+    tiempoEstado = millis();
+
+    Serial.print("Estado -> ");
+    Serial.println((int)estadoActual);
+}
+
+void apagarTodo()
+{
+    digitalWrite(ROJO_ENTRADA, LOW);
+    digitalWrite(ROJO_SALIDA, LOW);
+
+    digitalWrite(VERDE_ENTRADA, LOW);
+    digitalWrite(VERDE_SALIDA, LOW);
+}
+
+void activarEntrada()
+{
+    apagarTodo();
+
+    digitalWrite(ROJO_SALIDA, HIGH);
+
+    cambiarEstado(ENTRADA_ESPERA_E2);
+
+    Serial.println("Entrada iniciada");
+}
+
+void activarSalida()
+{
+    apagarTodo();
+
+    digitalWrite(ROJO_ENTRADA, HIGH);
+
+    cambiarEstado(SALIDA_ESPERA_E2);
+
+    Serial.println("Salida iniciada");
+}
+
+void entrarEnAlarma()
+{
+    apagarTodo();
+
+    cambiarEstado(ALARMA);
+
+    Serial.println("ALARMA");
+}
