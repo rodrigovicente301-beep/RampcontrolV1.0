@@ -114,8 +114,87 @@ void activarSalida()
 void entrarEnAlarma()
 {
     apagarTodo();
+//=====================================================
+// SETUP
+//=====================================================
 
+void setup()
+{
+    pinMode(SENSOR_ENTRADA, INPUT_PULLUP);
+    pinMode(SENSOR_CENTRO, INPUT_PULLUP);
+    pinMode(SENSOR_SALIDA, INPUT_PULLUP);
+
+    pinMode(ROJO_ENTRADA, OUTPUT);
+    pinMode(ROJO_SALIDA, OUTPUT);
+    pinMode(VERDE_ENTRADA, OUTPUT);
+    pinMode(VERDE_SALIDA, OUTPUT);
+
+    apagarTodo();
+
+    Serial.begin(9600);
+
+    Serial.println();
+    Serial.println("==================================");
+    Serial.println("     RampControl V1.0");
+    Serial.println(" Sistema iniciado correctamente");
+    Serial.println("==================================");
+
+    ultimoMovimiento = millis();
+}
     cambiarEstado(ALARMA);
 
     Serial.println("ALARMA");
+}
+//=====================================================
+// LOOP PRINCIPAL
+//=====================================================
+
+void loop()
+{
+    switch (estadoActual)
+    {
+        case REPOSO:
+
+            if (sensorActivo(SENSOR_ENTRADA))
+            {
+                ultimoMovimiento = millis();
+                activarEntrada();
+            }
+
+            else if (sensorActivo(SENSOR_SALIDA))
+            {
+                ultimoMovimiento = millis();
+                activarSalida();
+            }
+
+        break;
+
+        case ENTRADA_ESPERA_E2:
+
+        break;
+
+        case ENTRADA_ESPERA_E3:
+
+        break;
+
+        case SALIDA_ESPERA_E2:
+
+        break;
+
+        case SALIDA_ESPERA_E1:
+
+        break;
+
+        case VERDE_ENTRADA_ON:
+
+        break;
+
+        case VERDE_SALIDA_ON:
+
+        break;
+
+        case ALARMA:
+
+        break;
+    }
 }
