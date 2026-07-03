@@ -1,75 +1,123 @@
 /***********************************************************************
- * RampControl V1.0
- * -------------------------------------------------------------
- * Autor: Rodrigo Vicente + ChatGPT
- * Plataforma: Arduino UNO R3
+ *  RampControl V1.1
+ *----------------------------------------------------------------------
+ *  Autor: Rodrigo Vicente + ChatGPT
+ *  Plataforma: Arduino UNO R3
  *
- * Sistema de control para rampa de estacionamiento de un solo carril.
+ *  Control de una rampa de estacionamiento de un solo carril.
  *
- * Entradas:
- *  E1 -> Sensor entrada (calle)
- *  E2 -> Sensor centro (rampa)
- *  E3 -> Sensor salida (sótano)
+ *  Secuencia de entrada:
+ *      E1 -> E2 -> E3
  *
- * Salidas:
- *  ROJO_ENTRADA
- *  ROJO_SALIDA
- *  VERDE_ENTRADA
- *  VERDE_SALIDA
+ *  Secuencia de salida:
+ *      E3 -> E2 -> E1
  *
- * Programación sin delay()
- * Máquina de estados
- **********************************************************************/
+ *  Programación:
+ *      ✔ Máquina de estados
+ *      ✔ Sin delay()
+ *      ✔ Prioridad entre vehículos
+ *      ✔ Detección por flanco
+ ***********************************************************************/
 
-//==================== PINES ====================
+//====================== PINES ======================
 
-const byte SENSOR_ENTRADA = 2;   // E1
-const byte SENSOR_CENTRO  = 3;   // E2
-const byte SENSOR_SALIDA  = 4;   // E3
+// Sensores
+const byte SENSOR_ENTRADA = 2;
+const byte SENSOR_CENTRO  = 3;
+const byte SENSOR_SALIDA  = 4;
 
+// Semáforos
 const byte ROJO_ENTRADA  = 8;
 const byte ROJO_SALIDA   = 9;
 const byte VERDE_ENTRADA = 10;
 const byte VERDE_SALIDA  = 11;
 
-//==================== TIEMPOS ==================
 
-const unsigned long TIEMPO_E1_E2 = 15000UL;
-const unsigned long TIEMPO_E2_E3 = 30000UL;
-const unsigned long TIEMPO_VERDE = 3000UL;
-const unsigned long TIEMPO_INACTIVIDAD = 300000UL;
+//====================== TIEMPOS ======================
 
-//==================== ESTADOS ==================
+const unsigned long TIEMPO_LLEGAR_CENTRO = 15000UL;
+const unsigned long TIEMPO_VERDE         = 3000UL;
+const unsigned long TIEMPO_INACTIVIDAD   = 300000UL;
+const unsigned long TIEMPO_PARPADEO      = 500UL;
+
+
+//====================== ESTADOS ======================
 
 enum EstadoSistema
 {
     REPOSO,
 
-    ENTRADA_ESPERA_E2,
-    ENTRADA_ESPERA_E3,
+    ENTRADA_ESPERA_CENTRO,
+    ENTRADA_ESPERA_SALIDA,
 
-    SALIDA_ESPERA_E2,
-    SALIDA_ESPERA_E1,
+    SALIDA_ESPERA_CENTRO,
+    SALIDA_ESPERA_ENTRADA,
 
-    VERDE_ENTRADA_ON,
-    VERDE_SALIDA_ON,
+    VERDE_ENTRADA,
+    VERDE_SALIDA,
 
     ALARMA
 };
 
 EstadoSistema estadoActual = REPOSO;
 
-//==================== VARIABLES =================
+
+//====================== TEMPORIZADORES ======================
 
 unsigned long tiempoEstado = 0;
 unsigned long ultimoMovimiento = 0;
+unsigned long tiempoParpadeo = 0;
 
-//==================== FUNCIONES =================
 
-bool sensorActivo(byte pin)
+//====================== VARIABLES ======================
+
+bool parpadeo = false;
+
+
+//====================== DETECCIÓN POR FLANCO ======================
+
+bool anteriorE1 = HIGH;
+bool anteriorE2 = HIGH;
+bool anteriorE3 = HIGH;
+
+
+//====================== FUNCIONES ======================
+
+bool flancoEntrada()
 {
-    return digitalRead(pin) == LOW;
+    bool actual = digitalRead(SENSOR_ENTRADA);
+
+    bool pulso = (anteriorE1 == HIGH && actual == LOW);
+
+    anteriorE1 = actual;
+
+    return pulso;
 }
+
+bool flancoCentro()
+{
+    bool actual = digitalRead(SENSOR_CENTRO);
+
+    bool pulso = (anteriorE2 == HIGH && actual == LOW);
+
+    anteriorE2 = actual;
+
+    return pulso;
+}
+
+bool flancoSalida()
+{
+    bool actual = digitalRead(SENSOR_SALIDA);
+
+    bool pulso = (anteriorE3 == HIGH && actual == LOW);
+
+    anteriorE3 = actual;
+
+    return pulso;
+}
+
+
+//====================== CAMBIO DE ESTADO ======================
 
 void cambiarEstado(EstadoSistema nuevoEstado)
 {
@@ -80,6 +128,9 @@ void cambiarEstado(EstadoSistema nuevoEstado)
     Serial.println((int)estadoActual);
 }
 
+
+//====================== SEMÁFOROS ======================
+
 void apagarTodo()
 {
     digitalWrite(ROJO_ENTRADA, LOW);
@@ -89,112 +140,46 @@ void apagarTodo()
     digitalWrite(VERDE_SALIDA, LOW);
 }
 
-void activarEntrada()
-{
-    apagarTodo();
 
-    digitalWrite(ROJO_SALIDA, HIGH);
-
-    cambiarEstado(ENTRADA_ESPERA_E2);
-
-    Serial.println("Entrada iniciada");
-}
-
-void activarSalida()
+void semaforoEntradaBloqueada()
 {
     apagarTodo();
 
     digitalWrite(ROJO_ENTRADA, HIGH);
-
-    cambiarEstado(SALIDA_ESPERA_E2);
-
-    Serial.println("Salida iniciada");
 }
 
-void entrarEnAlarma()
+
+void semaforoSalidaBloqueada()
 {
     apagarTodo();
-//=====================================================
-// SETUP
-//=====================================================
 
-void setup()
-{
-    pinMode(SENSOR_ENTRADA, INPUT_PULLUP);
-    pinMode(SENSOR_CENTRO, INPUT_PULLUP);
-    pinMode(SENSOR_SALIDA, INPUT_PULLUP);
-
-    pinMode(ROJO_ENTRADA, OUTPUT);
-    pinMode(ROJO_SALIDA, OUTPUT);
-    pinMode(VERDE_ENTRADA, OUTPUT);
-    pinMode(VERDE_SALIDA, OUTPUT);
-
-    apagarTodo();
-
-    Serial.begin(9600);
-
-    Serial.println();
-    Serial.println("==================================");
-    Serial.println("     RampControl V1.0");
-    Serial.println(" Sistema iniciado correctamente");
-    Serial.println("==================================");
-
-    ultimoMovimiento = millis();
+    digitalWrite(ROJO_SALIDA, HIGH);
 }
+
+
+void semaforoEntradaLibre()
+{
+    apagarTodo();
+
+    digitalWrite(VERDE_ENTRADA, HIGH);
+}
+
+
+void semaforoSalidaLibre()
+{
+    apagarTodo();
+
+    digitalWrite(VERDE_SALIDA, HIGH);
+}
+
+
+//====================== ALARMA ======================
+
+void entrarAlarma()
+{
     cambiarEstado(ALARMA);
 
-    Serial.println("ALARMA");
-}
-//=====================================================
-// LOOP PRINCIPAL
-//=====================================================
+    tiempoParpadeo = millis();
 
-void loop()
-{
-    switch (estadoActual)
-    {
-        case REPOSO:
-
-            if (sensorActivo(SENSOR_ENTRADA))
-            {
-                ultimoMovimiento = millis();
-                activarEntrada();
-            }
-
-            else if (sensorActivo(SENSOR_SALIDA))
-            {
-                ultimoMovimiento = millis();
-                activarSalida();
-            }
-
-        break;
-
-        case ENTRADA_ESPERA_E2:
-
-        break;
-
-        case ENTRADA_ESPERA_E3:
-
-        break;
-
-        case SALIDA_ESPERA_E2:
-
-        break;
-
-        case SALIDA_ESPERA_E1:
-
-        break;
-
-        case VERDE_ENTRADA_ON:
-
-        break;
-
-        case VERDE_SALIDA_ON:
-
-        break;
-
-        case ALARMA:
-
-        break;
-    }
+    Serial.println("***** ALARMA *****");
 }
