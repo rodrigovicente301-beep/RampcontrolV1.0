@@ -36,10 +36,11 @@ const byte VERDE_SALIDA  = 11;
 //====================== TIEMPOS ======================
 
 const unsigned long TIEMPO_LLEGAR_CENTRO = 15000UL;
+const unsigned long TIEMPO_E2_E3 = 30000UL;
 const unsigned long TIEMPO_VERDE         = 3000UL;
 const unsigned long TIEMPO_INACTIVIDAD   = 300000UL;
 const unsigned long TIEMPO_PARPADEO      = 500UL;
-
+const unsigned long TIEMPO_ALARMA = 10000UL;
 
 //====================== ESTADOS ======================
 
@@ -183,3 +184,241 @@ void entrarAlarma()
 
     Serial.println("***** ALARMA *****");
 }
+//====================== INACTIVIDAD ======================
+
+void verificarInactividad()
+{
+    if (estadoActual == REPOSO)
+    {
+        if (millis() - ultimoMovimiento >= TIEMPO_INACTIVIDAD)
+        {
+            apagarTodo();
+        }
+    }
+}
+//====================== INICIAR ENTRADA ======================
+
+void iniciarEntrada()
+{
+    ultimoMovimiento = millis();
+
+    semaforoSalidaBloqueada();
+
+    cambiarEstado(ENTRADA_ESPERA_CENTRO);
+
+    Serial.println("=== INICIO ENTRADA ===");
+}
+
+
+//====================== INICIAR SALIDA ======================
+
+void iniciarSalida()
+{
+    ultimoMovimiento = millis();
+
+    semaforoEntradaBloqueada();
+
+    cambiarEstado(SALIDA_ESPERA_CENTRO);
+
+    Serial.println("=== INICIO SALIDA ===");
+}
+
+
+//============================================================
+// SETUP
+//============================================================
+
+void setup()
+{
+    pinMode(SENSOR_ENTRADA, INPUT_PULLUP);
+    pinMode(SENSOR_CENTRO, INPUT_PULLUP);
+    pinMode(SENSOR_SALIDA, INPUT_PULLUP);
+
+    pinMode(ROJO_ENTRADA, OUTPUT);
+    pinMode(ROJO_SALIDA, OUTPUT);
+    pinMode(VERDE_ENTRADA, OUTPUT);
+    pinMode(VERDE_SALIDA, OUTPUT);
+
+    apagarTodo();
+
+    Serial.begin(9600);
+
+    Serial.println();
+    Serial.println("====================================");
+    Serial.println("       RampControl V1.1");
+    Serial.println(" Sistema iniciado correctamente");
+    Serial.println("====================================");
+
+    ultimoMovimiento = millis();
+}
+
+
+//============================================================
+// LOOP PRINCIPAL (BASE)
+//============================================================
+
+void loop()
+{
+    switch (estadoActual)
+    {
+
+        //----------------------------------------------------
+        case REPOSO:
+
+            if (flancoEntrada())
+            {
+                iniciarEntrada();
+            }
+
+            else if (flancoSalida())
+            {
+                iniciarSalida();
+            }
+
+        break;
+      
+
+
+        //----------------------------------------------------
+        case ENTRADA_ESPERA_CENTRO:
+
+    // ¿El vehículo llegó al sensor central?
+    if (flancoCentro())
+    {
+        ultimoMovimiento = millis();
+
+        cambiarEstado(ENTRADA_ESPERA_SALIDA);
+
+        Serial.println("Vehiculo detectado en E2");
+    }
+
+    // ¿No llegó en 15 segundos?
+    else if (millis() - tiempoEstado >= TIEMPO_LLEGAR_CENTRO)
+    {
+        entrarAlarma();
+    }
+
+break;
+
+
+
+        //----------------------------------------------------
+        case ENTRADA_ESPERA_SALIDA:
+
+    // ¿El vehículo llegó a la salida?
+    if (flancoSalida())
+    {
+        ultimoMovimiento = millis();
+
+        semaforoSalidaLibre();
+
+        cambiarEstado(VERDE_SALIDA);
+
+        Serial.println("Vehiculo termino de subir");
+    }
+
+break;
+
+
+        //----------------------------------------------------
+case SALIDA_ESPERA_CENTRO:
+
+    // ¿El vehículo llegó al sensor central?
+    if (flancoCentro())
+    {
+        ultimoMovimiento = millis();
+
+        cambiarEstado(SALIDA_ESPERA_ENTRADA);
+
+        Serial.println("Vehiculo detectado en E2");
+    }
+
+    // ¿No llegó en 15 segundos?
+    else if (millis() - tiempoEstado >= TIEMPO_LLEGAR_CENTRO)
+    {
+        entrarAlarma();
+    }
+
+break;
+
+
+//----------------------------------------------------
+case SALIDA_ESPERA_ENTRADA:
+
+    // ¿El vehículo llegó a la entrada?
+    if (flancoEntrada())
+    {
+        ultimoMovimiento = millis();
+
+        semaforoEntradaLibre();
+
+        cambiarEstado(VERDE_ENTRADA);
+
+        Serial.println("Vehiculo termino de bajar");
+    }
+
+break;
+
+
+        //----------------------------------------------------
+case VERDE_ENTRADA:
+
+    // Mantener el verde durante 3 segundos
+    if (millis() - tiempoEstado >= TIEMPO_VERDE)
+    {
+        apagarTodo();
+ultimoMovimiento = millis();
+        cambiarEstado(REPOSO);
+
+        Serial.println("Sistema listo");
+    }
+
+break;
+
+
+//----------------------------------------------------
+case VERDE_SALIDA:
+
+    // Mantener el verde durante 3 segundos
+    if (millis() - tiempoEstado >= TIEMPO_VERDE)
+    {
+        apagarTodo();
+ultimoMovimiento = millis();
+        cambiarEstado(REPOSO);
+
+        Serial.println("Sistema listo");
+    }
+
+break;
+
+
+//----------------------------------------------------
+case ALARMA:
+
+    // Parpadeo de ambos rojos
+    if (millis() - tiempoParpadeo >= TIEMPO_PARPADEO)
+    {
+        tiempoParpadeo = millis();
+
+        parpadeo = !parpadeo;
+
+        digitalWrite(ROJO_ENTRADA, parpadeo);
+        digitalWrite(ROJO_SALIDA, parpadeo);
+    }
+
+    // Después de 10 segundos vuelve automáticamente a REPOSO
+    if (millis() - tiempoEstado >= TIEMPO_ALARMA)
+    {
+        apagarTodo();
+ultimoMovimiento = millis();
+        cambiarEstado(REPOSO);
+
+        Serial.println("Fin de alarma");
+    }
+
+break;
+
+    }
+verificarInactividad();
+}
+
